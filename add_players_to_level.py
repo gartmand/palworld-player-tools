@@ -123,14 +123,27 @@ def main():
     character_save_parameter_map_values = (
         level_gvas.properties)['worldSaveData']['value']['CharacterSaveParameterMap']['value']
 
-    players = list(filter(
+    for filename in player_filenames:
+        old_sav_path = os.path.join(old_player_saves_dir, filename)
+        new_sav_path = os.path.join(new_server_savegame_dir, 'Players', filename)
+        guid_raw, guid_formatted = get_guid_data(old_sav_path)
+
+        player_old_gvas = sav_to_gvas(old_sav_path)
+        player_new_gvas = sav_to_gvas(new_sav_path)
+
+
+
+
+
+    # Data about players that is stored only on the Level.sav, not on the Player.sav
+    level_players = list(filter(
         lambda x: x['value']['RawData']['value']['object']['SaveParameter']['value']['IsPlayer']['value'],
         character_save_parameter_map_values))
     if level_mapping_file:
         level_mapping_data = {}
         with open(level_mapping_file) as json_file:
             level_mapping_data = json.load(json_file)
-        for p in players:
+        for p in level_players:
             for v in filter(lambda y: y['PlayerUId'] == p['key']['PlayerUId']['value'], level_mapping_data['values']):
                 p['value']['RawData']['value']['object']['SaveParameter']['value']['Level'] = {
                     'id': None,
