@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import sys
@@ -12,18 +13,6 @@ add_players_to_level.py <old_player_saves_dir> <new_server_savegame_dir> [<level
     new_server_savegame_dir => Path to directory containing both Level.sav of the new server, 
         AND a Players/ directory containing pre-seeded .sav files for the players to be copied.
 '''
-
-
-def add_player_to_level(old_user_json, new_user_json, level_json):
-    pass
-
-
-def add_players_to_level(user_guids, level_json):
-    pass
-
-
-def merge_player_json(old_json, new_json):
-    pass
 
 
 def format_guid(guid_or_filename):
@@ -92,69 +81,96 @@ def main():
     if len(player_filenames) == 0:
         error('No .sav files found in old_player_saves_dir {}')
 
-    player_guids_raw = []
-    player_guids_formatted = []
+    new_players_sav_dir = os.path.join(new_server_savegame_dir, 'Players')
+    level_sav_file = os.path.join(new_server_savegame_dir, 'Level.sav')
 
-    # Collect raw (uppercase) and formatted (dashed lower) GUIDs.
-    for path in player_filenames:
-        guid_raw, guid_formatted = get_guid_data(path)
-
-        player_guids_raw.append(guid_raw)
-        player_guids_formatted.append(guid_formatted)
-
-    # # Alternatively:
-    # player_guids_raw, player_guids_formatted = \
-    #     (x for x in zip(*map(get_guid_data, player_filename_paths)))
-
-    print(', '.join(player_filenames))
-    print(', '.join(player_guids_raw))
-    print(', '.join(player_guids_formatted))
-
-    level_sav_path = new_server_savegame_dir + '/Level.sav'
-
-    save_folder_contents = os.listdir(new_server_savegame_dir)
-    if 'Players' not in save_folder_contents or 'Level.sav' not in save_folder_contents:
+    if (not os.path.isdir(new_server_savegame_dir)
+            or not os.path.isdir(new_players_sav_dir)
+            or not os.path.isfile(level_sav_file)):
         print('Please specify a new_server_savegame_dir that contains a Players directory and a Level.sav')
         error(_USAGE_)
 
     # Convert level files to JSON
-    level_gvas = sav_to_gvas(level_sav_path)
+    level_gvas = None
+    character_save_parameter_map_values = {}
+    level_mapping_data = {}
 
-    character_save_parameter_map_values = (
-        level_gvas.properties)['worldSaveData']['value']['CharacterSaveParameterMap']['value']
-
-    for filename in player_filenames:
-        old_sav_path = os.path.join(old_player_saves_dir, filename)
-        new_sav_path = os.path.join(new_server_savegame_dir, 'Players', filename)
-        guid_raw, guid_formatted = get_guid_data(old_sav_path)
-
-        player_old_gvas = sav_to_gvas(old_sav_path)
-        player_new_gvas = sav_to_gvas(new_sav_path)
-
-
-
-
-
-    # Data about players that is stored only on the Level.sav, not on the Player.sav
-    level_players = list(filter(
-        lambda x: x['value']['RawData']['value']['object']['SaveParameter']['value']['IsPlayer']['value'],
-        character_save_parameter_map_values))
+    # We can't restore certain data about players that is stored only on the Level.sav if that was lost.
+    # Instead, we need a manual mapping to be supplied. At the moment, only the Player Level and Stat Points (related)
+    # are known to fall in this category.
     if level_mapping_file:
-        level_mapping_data = {}
+        level_gvas = sav_to_gvas(level_sav_file)
         with open(level_mapping_file) as json_file:
             level_mapping_data = json.load(json_file)
-        for p in level_players:
-            for v in filter(lambda y: y['PlayerUId'] == p['key']['PlayerUId']['value'], level_mapping_data['values']):
-                p['value']['RawData']['value']['object']['SaveParameter']['value']['Level'] = {
-                    'id': None,
-                    'value': v['Level'],
-                    'type': 'IntProperty'
-                }
-                p['value']['RawData']['value']['object']['SaveParameter']['value']['UnusedStatusPoint'] = {
-                    'id': None,
-                    'value': v['Level'] - 1,
-                    'type': 'IntProperty'
-                }
+        character_save_parameter_map_values = (
+            level_gvas.properties)['worldSaveData']['value']['CharacterSaveParameterMap']['value']
+
+    # Since the seed player sav file (new save) has all the right Containers and the right Instance ID,
+    # we just need to copy over these properties from the old player sav into the seed sav.
+    player_save_data_copy_properties = [
+        'PlayerCharacterMakeData',
+        'TechnologyPoint',
+        'bossTechnologyPoint',
+        'UnlockedRecipeTechnologyNames',
+        'RecordData'
+    ]
+
+    for filename in player_filenames:
+
+        new_sav_file = os.path.join(new_server_savegame_dir, 'Players', filename)
+
+        old_sav_file = os.path.join(old_player_saves_dir, filename)
+        guid_raw, guid_formatted = get_guid_data(filename)
+
+        print('Processing player .sav file: {}'.format(filename))
+
+        if not os.path.exists(new_sav_file):
+            warn('Could not find matching save in new server for player with UID {} - SKIPPING'.format(guid_raw))
+            continue
+
+        if level_mapping_data and level_mapping_data['values']:
+            # The matching lists should only be length one, but this is done to keep it idiomatic
+            matching_level_players = list(filter(
+                lambda x: x['key']['PlayerUId']['value'] == guid_formatted,
+                character_save_parameter_map_values))
+
+            matching_mapping_players = list(filter(
+                lambda y: y['PlayerUId'] == guid_formatted,
+                level_mapping_data['values']))
+
+            if len(matching_level_players) == 0:
+                warn('SKIPPING Player with UID "{}" because they were not found in Level.sav. '
+                     'Please be sure the player logged onto the new server to seed their data.'.format(guid_raw))
+                continue
+
+            if len(matching_mapping_players) == 0:
+                warn('Player with UID "{}" not found in mapping. Their level and attribute points will remain'
+                     'the same as those of the seed character.'.format(guid_raw))
+
+            for p in matching_level_players:
+                for v in matching_mapping_players:
+                    p['value']['RawData']['value']['object']['SaveParameter']['value']['Level'] = {
+                        'id': None,
+                        'value': v['Level'],
+                        'type': 'IntProperty'
+                    }
+                    p['value']['RawData']['value']['object']['SaveParameter']['value']['UnusedStatusPoint'] = {
+                        'id': None,
+                        'value': v['Level'] - 1,
+                        'type': 'IntProperty'
+                    }
+
+        player_old_gvas = sav_to_gvas(old_sav_file)
+        player_new_gvas = sav_to_gvas(new_sav_file)
+
+        for copy_property in player_save_data_copy_properties:
+            copy_property_val = player_old_gvas.properties['SaveData']['value'].get(copy_property)
+
+            if copy_property_val:
+                player_new_gvas.properties['SaveData']['value'][copy_property] = copy.deepcopy(copy_property_val)
+
+        gvas_to_sav(player_new_gvas, new_sav_file)
+    gvas_to_sav(level_gvas, level_sav_file)
 
 
 if __name__ == '__main__':
