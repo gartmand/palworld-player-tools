@@ -89,8 +89,7 @@ def main():
             or not os.path.isfile(level_sav_file)):
         print('Please specify a new_server_savegame_dir that contains a Players directory and a Level.sav')
         error(_USAGE_)
-
-    # Convert level files to JSON
+    
     level_gvas = None
     character_save_parameter_map_values = {}
     level_mapping_data = {}
