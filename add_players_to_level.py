@@ -1,4 +1,6 @@
+import argparse
 import copy
+import glob
 import json
 import os
 import sys
@@ -7,11 +9,17 @@ from palworld_save_tools.gvas import GvasFile
 from palworld_save_tools.palsav import compress_gvas_to_sav, decompress_sav_to_gvas
 from palworld_save_tools.paltypes import PALWORLD_CUSTOM_PROPERTIES, PALWORLD_TYPE_HINTS
 
-_USAGE_ = '''\
-add_players_to_level.py <old_player_saves_dir> <new_server_savegame_dir> [<level_mapping_file>]'
-    old_player_saves_dir => Path to Players/ directory where the .sav of players you want to insert into the level are
-    new_server_savegame_dir => Path to directory containing both Level.sav of the new server, 
-        AND a Players/ directory containing pre-seeded .sav files for the players to be copied.
+_PROGRAM_DESCRIPTION_ = '''\
+Used to transfer players from specified Players directory (or specific files within it) to a destination 
+savegame folder (Level.sav and Players/) when restoring from backup, after losing the original 
+Level.sav. The players to be copied should first create characters on the destination. '
+An optional mapping file (JSON) can be passed in to specify the levels of the players. '
+If this is left off, the players\' levels will all be set to whatever level the seed character is '
+(probably 1). No inventory, PalBox, etc. will be copied over.
+
+Note that if the server is on a different architecture, you may need to apply a GUID fix (not yet implemented here).
+
+WARNING: The files in the destination savegame directory WILL BE MODIFIED. USE AT YOUR OWN RISK.
 '''
 
 
@@ -63,32 +71,58 @@ def gvas_to_sav(gvas_file, output_filepath):
 
 
 def main():
-    if len(sys.argv) < 3:
-        error(_USAGE_)
+    parser = argparse.ArgumentParser(description=_PROGRAM_DESCRIPTION_)
 
-    old_player_saves_dir = sys.argv[1].replace(os.sep, '/')
-    new_server_savegame_dir = sys.argv[2].replace(os.sep, '/')
-    level_mapping_file = sys.argv[3].replace(os.sep, '/') if len(sys.argv) >= 4 and sys.argv[3] else ''
+    parser.add_argument('--level-mapping-file', '-m',
+                        required=False,
+                        help='The path to a JSON file containing a mapping of Player GUIds to their desired level')
+
+    parser.add_argument('--old-player-saves-dir', '-s',
+                        required=True,
+                        help='The path to a directory containing player save '
+                             'data to copy over (Usually called "Players")')
+
+    parser.add_argument('--player-save-file', '-f',
+                        action='append',
+                        help='The name of a specific player save file whose data should be transferred. '
+                             'If none specified, all save files in old-player-saves-dir will be used. '
+                             'Supports entering multiple files, e.g. -f filename1.sav -f filename2.sav.')
+
+    parser.add_argument('--new-server-savegame-dir', '-d',
+                        required=True,
+                        help='The path to the destination directory containing Players/ and Level.sav')
+
+    args = parser.parse_args()
+    new_server_savegame_dir = args.new_server_savegame_dir
+    level_mapping_file = args.level_mapping_file
+    old_player_saves_dir = args.old_player_saves_dir
+    player_save_files = args.player_save_file
 
     if not level_mapping_file:
         warn('No level_mapping_file specified. The levels of the seed characters, along with their stat '
              'points, will be used. This probably means you\'ll have level one characters with bugged unlocks!')
 
-    # Get the filenames of all the player saves. These can be used for GUIDs (and opening).
-    # player_filename_paths = glob.glob(old_player_saves_dir + '/*.sav', recursive=False)
-    player_filenames = list(filter(lambda x: x.endswith('.sav'), os.listdir(old_player_saves_dir)))
+    player_filenames = []
+    if player_save_files:
+        player_filenames = [os.path.join(old_player_saves_dir, file) for file in player_save_files]
+    else:
+        # Get the filenames of all the player saves. These can be used for GUIDs (and opening).
+        player_filenames = glob.glob(os.path.join(old_player_saves_dir, '*.sav'), recursive=False)
+        # player_filenames = list(filter(lambda x: x.endswith('.sav'), os.listdir(old_player_saves_dir)))
+        if len(player_filenames) == 0:
+            error('No .sav files found in old_player_saves_dir {}')
 
-    if len(player_filenames) == 0:
-        error('No .sav files found in old_player_saves_dir {}')
+    add_players_to_level(player_filenames, new_server_savegame_dir, level_mapping_file)
 
+
+def add_players_to_level(player_filenames, new_server_savegame_dir, level_mapping_file):
     new_players_sav_dir = os.path.join(new_server_savegame_dir, 'Players')
     level_sav_file = os.path.join(new_server_savegame_dir, 'Level.sav')
 
     if (not os.path.isdir(new_server_savegame_dir)
             or not os.path.isdir(new_players_sav_dir)
             or not os.path.isfile(level_sav_file)):
-        print('Please specify a new_server_savegame_dir that contains a Players directory and a Level.sav')
-        error(_USAGE_)
+        error('Please specify a new_server_savegame_dir that contains a Players directory and a Level.sav')
 
     # Convert level files to JSON
     level_gvas = None
@@ -115,11 +149,10 @@ def main():
         'RecordData'
     ]
 
-    for filename in player_filenames:
-
+    for old_sav_file in player_filenames:
+        filename = os.path.basename(old_sav_file)
         new_sav_file = os.path.join(new_server_savegame_dir, 'Players', filename)
 
-        old_sav_file = os.path.join(old_player_saves_dir, filename)
         guid_raw, guid_formatted = get_guid_data(filename)
 
         print('Processing player .sav file: {}'.format(filename))
@@ -140,11 +173,11 @@ def main():
 
             if len(matching_level_players) == 0:
                 warn('SKIPPING Player with UID "{}" because they were not found in Level.sav. '
-                     'Please be sure the player logged onto the new server to seed their data.'.format(guid_raw))
+                     'Please be sure the player has logged onto the new server to seed their data.'.format(guid_raw))
                 continue
 
             if len(matching_mapping_players) == 0:
-                warn('Player with UID "{}" not found in mapping. Their level and attribute points will remain'
+                warn('Player with UID "{}" not found in mapping. Their level and attribute points will remain '
                      'the same as those of the seed character.'.format(guid_raw))
 
             for p in matching_level_players:
@@ -170,7 +203,9 @@ def main():
                 player_new_gvas.properties['SaveData']['value'][copy_property] = copy.deepcopy(copy_property_val)
 
         gvas_to_sav(player_new_gvas, new_sav_file)
-    gvas_to_sav(level_gvas, level_sav_file)
+
+    if level_mapping_file:
+        gvas_to_sav(level_gvas, level_sav_file)
 
 
 if __name__ == '__main__':
