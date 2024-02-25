@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d6c0d7c0-72c0-4cd6-89b3-b11b4613f47b" name="Changes" comment="Working prototype">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="d6c0d7c0-72c0-4cd6-89b3-b11b4613f47b" name="Changes" comment="Rework to use named arguments. Allow specification of individual player.sav files.">
       <change beforePath="$PROJECT_DIR$/add_players_to_level.py" beforeDir="false" afterPath="$PROJECT_DIR$/add_players_to_level.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -96,7 +95,15 @@
       <option name="project" value="LOCAL" />
       <updated>1708885981344</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="Rework to use named arguments. Allow specification of individual player.sav files.">
+      <option name="closed" value="true" />
+      <created>1708891214055</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1708891214055</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -115,6 +122,7 @@
     <MESSAGE value="Implement insertion of level data from mapping" />
     <MESSAGE value="WIP getting player data to merge" />
     <MESSAGE value="Working prototype" />
-    <option name="LAST_COMMIT_MESSAGE" value="Working prototype" />
+    <MESSAGE value="Rework to use named arguments. Allow specification of individual player.sav files." />
+    <option name="LAST_COMMIT_MESSAGE" value="Rework to use named arguments. Allow specification of individual player.sav files." />
   </component>
 </project>

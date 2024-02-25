@@ -124,7 +124,6 @@ def add_players_to_level(player_filenames, new_server_savegame_dir, level_mappin
             or not os.path.isfile(level_sav_file)):
         error('Please specify a new_server_savegame_dir that contains a Players directory and a Level.sav')
 
-    # Convert level files to JSON
     level_gvas = None
     character_save_parameter_map_values = {}
     level_mapping_data = {}
