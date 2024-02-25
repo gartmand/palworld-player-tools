@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -78,7 +79,7 @@ def main():
 
     old_player_saves_dir = sys.argv[1].replace(os.sep, '/')
     new_server_savegame_dir = sys.argv[2].replace(os.sep, '/')
-    level_mapping_file = sys.argv[3].replace(os.sep, '/') if sys.argv[3] else ''
+    level_mapping_file = sys.argv[3].replace(os.sep, '/') if len(sys.argv) >= 4 and sys.argv[3] else ''
 
     if not level_mapping_file:
         warn('No level_mapping_file specified. The levels of the seed characters, along with their stat '
@@ -121,29 +122,26 @@ def main():
 
     character_save_parameter_map_values = (
         level_gvas.properties)['worldSaveData']['value']['CharacterSaveParameterMap']['value']
-    # instance_ids_len = len(character_save_parameter_map_values)
 
-    players_filter = filter(
+    players = list(filter(
         lambda x: x['value']['RawData']['value']['object']['SaveParameter']['value']['IsPlayer']['value'],
-        character_save_parameter_map_values)
-    for p in players_filter:
-        p['value']['RawData']['value']['object']['SaveParameter']['value']['Level'] = {
-            'Level': {
-                'id': None,
-                'value': 14,
-                'type': 'IntProperty'
-            }
-        }
-        print(p['value']['RawData']['value']['object']['SaveParameter']['value'])
-        # "Level": {
-        #     "id": null,
-        #     "value": 14,
-        #     "type": "IntProperty"
-        # }
-    players = [x['value']['RawData']['value']['object']['SaveParameter']['value']['NickName']['value']
-               for x in players_filter]
-
-    print(players)
+        character_save_parameter_map_values))
+    if level_mapping_file:
+        level_mapping_data = {}
+        with open(level_mapping_file) as json_file:
+            level_mapping_data = json.load(json_file)
+        for p in players:
+            for v in filter(lambda y: y['PlayerUId'] == p['key']['PlayerUId']['value'], level_mapping_data['values']):
+                p['value']['RawData']['value']['object']['SaveParameter']['value']['Level'] = {
+                    'id': None,
+                    'value': v['Level'],
+                    'type': 'IntProperty'
+                }
+                p['value']['RawData']['value']['object']['SaveParameter']['value']['UnusedStatusPoint'] = {
+                    'id': None,
+                    'value': v['Level'] - 1,
+                    'type': 'IntProperty'
+                }
 
 
 if __name__ == '__main__':
