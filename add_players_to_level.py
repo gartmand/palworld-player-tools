@@ -38,8 +38,8 @@ Suggested use:
    inventories or PalBoxes, and constructions will disappear.
 8. If there are stragglers who didn't create seed characters, you can repeat the process.
    Shut down the server, have stragglers create a character. Make note of the filenames
-   of their saves. Run the tool again, adding -f SAV_FILE_NAME for each straggler's save.
-   Make sure not to run it without -f, as it will process all the saves again.
+   of their saves. Run the tool again, adding --player-save-file (-f) SAV_FILE_NAME for each straggler's save.
+   Make sure not to run it without specifying at least one -f; otherwise, it will process all the saves again.
 9. Start the server again.
 
 WARNING: The files in the destination savegame directory WILL BE MODIFIED. USE AT YOUR OWN RISK.
