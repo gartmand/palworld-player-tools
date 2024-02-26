@@ -10,16 +10,46 @@ from palworld_save_tools.palsav import compress_gvas_to_sav, decompress_sav_to_g
 from palworld_save_tools.paltypes import PALWORLD_CUSTOM_PROPERTIES, PALWORLD_TYPE_HINTS
 
 _PROGRAM_DESCRIPTION_ = '''\
-Used to transfer players from specified Players directory (or specific files within it) to a destination 
-savegame folder (Level.sav and Players/) when restoring from backup, after losing the original 
-Level.sav. The players to be copied should first create characters on the destination. '
-An optional mapping file (JSON) can be passed in to specify the levels of the players. '
-If this is left off, the players\' levels will all be set to whatever level the seed character is '
-(probably 1). No inventory, PalBox, etc. will be copied over.
+This tool was created to address the problem of restoring players to the same server when they had a character but are 
+prompted with Character Creation. In other words - their data is missing from Level.sav. Restoring them to a different
+server isn't fully supported and you might have to figure that out yourself for now. If the server is on a different 
+architecture, or you are restoring from single player to dedicated or vice versa, 
+you may need to apply a GUID replacement (not yet implemented here) to the .sav files after gathering info on what
+the players' new GUIDs will be. Suggested reading: https://github.com/xNul/palworld-host-save-fix
+No inventory, PalBox, etc. will be copied over, unfortunately.
 
-Note that if the server is on a different architecture, you may need to apply a GUID fix (not yet implemented here).
+Suggested use:
+1. MAKE SURE YOUR PLAYERS DO NOT FINISH CHARACTER CREATION BEFORE YOU MAKE A COPY OF THE SAVE.
+   If they do, their save will be overwritten and lost. In that case, it's probably best to use a full-fledged
+   save editor like Paver: https://github.com/adefee/paver-palworld-save-editor
+2. Ensure the server is stopped. Otherwise, it's going to overwrite your fixes, and your players might
+   create characters and overwrite their individual .sav files inadvertently.
+3. Create a backup of the Level's save folder. That is - the one containing Level.sav and Players/. Make sure it's
+   the one in use by the server. Otherwise, you will lose the Player saves forever further in this process.
+4. Ask your players what level they were. Record their levels (and the total exp required to get there PLUS ONE)
+   in a mapping.json file. For now, the Exp value is a manual entry. I hope to implement a similar lookup to the one
+   that Paver does here: https://github.com/adefee/paver-palworld-save-editor/blob/main/src/data/experiencePerLevel.json
+   The XP tuning might be in flux, thus such a lookup table might change frequently. 
+5. Start the server, then have your players all log in.
+6. Stop the server, then run the tool. Point the --old-player-saves-dir (-s) at the Players/ directory inside
+   your backup copy, the --new-server-savegame-dir (-d) at the in-use Level save folder 
+   containing Players/ and Level.sav, and the --level-mapping-file (-m) at the mapping you created in 4.
+7. Start the server, and verify your players are restored. Note that at this time, this tool cannot restore
+   inventories or PalBoxes, and constructions will disappear.
+8. If there are stragglers who didn't create seed characters, you can repeat the process.
+   Shut down the server, have stragglers create a character. Make note of the filenames
+   of their saves. Run the tool again, adding -f SAV_FILE_NAME for each straggler's save.
+   Make sure not to run it without -f, as it will process all the saves again.
+9. Start the server again.
 
 WARNING: The files in the destination savegame directory WILL BE MODIFIED. USE AT YOUR OWN RISK.
+   
+Good luck!   
+
+The mapping file (JSON) is passed in to specify the levels of the players.
+See the mapping.json in the repository for an example.
+If this is left off, the players\' levels will all be set to whatever level the seed character is
+(probably 1).
 '''
 
 
@@ -75,12 +105,14 @@ def main():
 
     parser.add_argument('--level-mapping-file', '-m',
                         required=False,
-                        help='The path to a JSON file containing a mapping of Player GUIds to their desired level')
+                        help='The path to a JSON file containing a mapping of Player GUIds to their desired level. '
+                             'If the path contains spaces, surround it with quotes. Double any backslashes.')
 
     parser.add_argument('--old-player-saves-dir', '-s',
                         required=True,
                         help='The path to a directory containing player save '
-                             'data to copy over (Usually called "Players")')
+                             'data to copy over (Usually called "Players"). '
+                             'If the path contains spaces, surround it with quotes. Double any backslashes.')
 
     parser.add_argument('--player-save-file', '-f',
                         action='append',
@@ -90,7 +122,8 @@ def main():
 
     parser.add_argument('--new-server-savegame-dir', '-d',
                         required=True,
-                        help='The path to the destination directory containing Players/ and Level.sav')
+                        help='The path to the destination directory containing Players/ and Level.sav.'
+                             'If the path contains spaces, surround it with quotes. Double any backslashes.')
 
     args = parser.parse_args()
     new_server_savegame_dir = args.new_server_savegame_dir
@@ -138,8 +171,17 @@ def add_players_to_level(player_filenames, new_server_savegame_dir, level_mappin
         character_save_parameter_map_values = (
             level_gvas.properties)['worldSaveData']['value']['CharacterSaveParameterMap']['value']
 
-    # Since the seed player sav file (new save) has all the right Containers and the right Instance ID,
+    # Since the seed player sav file (new save) has all the right new (but empty) Containers and the right Instance ID,
     # we just need to copy over these properties from the old player sav into the seed sav.
+    #
+    # TODO: It might be good to replace the Container IDs in the seed sav with those from the
+    #       old one, if those containers survived whatever corruption occurred. In other words, we'd need to
+    #       filter for references to the Container IDs in the Level.sav. If one is present, do the replacement.
+    #       It might also be nice to look for occurrences of the old Player Instance ID and replace with
+    #       the new one, like xNul/palworld-host-save-fix does for the guild fix, or vice versa.
+    #       This is probably a pipe dream though. Whatever corruption causes the characters to be deleted from the
+    #       Level.sav seems like it cascades the delete to the Player's containers.
+    #
     player_save_data_copy_properties = [
         'PlayerCharacterMakeData',
         'TechnologyPoint',
@@ -189,6 +231,11 @@ def add_players_to_level(player_filenames, new_server_savegame_dir, level_mappin
                     p['value']['RawData']['value']['object']['SaveParameter']['value']['UnusedStatusPoint'] = {
                         'id': None,
                         'value': v['Level'] - 1,
+                        'type': 'IntProperty'
+                    }
+                    p['value']['RawData']['value']['object']['SaveParameter']['value']['Exp'] = {
+                        'id': None,
+                        'value': v['Exp'],
                         'type': 'IntProperty'
                     }
 
